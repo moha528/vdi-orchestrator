@@ -44,7 +44,7 @@ services:
 
   # ─── VDI Orchestrator (NOUVEAU) ───────────────────
   vdi-orchestrator:
-    build: ./vdi-orchestrator/app
+    build: ./app
     container_name: vdi-orchestrator
     restart: unless-stopped
     ports:
