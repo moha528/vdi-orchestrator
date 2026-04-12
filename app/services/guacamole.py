@@ -1,8 +1,14 @@
 """Accès direct à la DB Guacamole : auth, users, groupes, connexions, historique."""
 import base64
 import hashlib
+import json
 import logging
+import time
 from typing import Optional
+
+import httpx
+from Crypto.Cipher import AES
+from Crypto.Util.Padding import pad
 
 from ..config import settings
 from ..database import get_db
@@ -221,3 +227,47 @@ def guac_client_url(connection_id: int) -> str:
     """Deep link vers Guacamole pour cette connexion."""
     token = base64.b64encode(f"{connection_id}\0c\0postgresql".encode()).decode()
     return f"{settings.GUAC_URL}/#/client/{token}"
+
+
+# ── guacamole-auth-json (SSO) ──────────────────────────
+
+def _encrypt_auth_json(payload: dict) -> str:
+    """Chiffre un payload JSON en AES-128-CBC (IV nul) pour guacamole-auth-json."""
+    key = bytes.fromhex(settings.GUAC_JSON_SECRET)
+    json_bytes = json.dumps(payload).encode("utf-8")
+    iv = b'\x00' * 16
+    cipher = AES.new(key, AES.MODE_CBC, iv)
+    encrypted = cipher.encrypt(pad(json_bytes, AES.block_size))
+    return base64.b64encode(encrypted).decode()
+
+
+def get_guac_auth_token(username: str, connection_name: str,
+                        protocol: str, params: dict,
+                        expires_in: int = 300) -> str:
+    """Génère un blob auth-json chiffré, le POST à Guacamole, retourne l'authToken."""
+    payload = {
+        "username": username,
+        "expires": str(int((time.time() + expires_in) * 1000)),
+        "connections": {
+            connection_name: {
+                "protocol": protocol,
+                "parameters": params,
+            }
+        },
+    }
+    blob = _encrypt_auth_json(payload)
+    resp = httpx.post(
+        f"{settings.GUAC_URL}/api/tokens",
+        data={"data": blob},
+        timeout=10,
+    )
+    resp.raise_for_status()
+    return resp.json()["authToken"]
+
+
+def guac_sso_url(username: str, connection_name: str,
+                 protocol: str, params: dict) -> str:
+    """Retourne une URL Guacamole avec authentification intégrée (auth-json)."""
+    auth_token = get_guac_auth_token(username, connection_name, protocol, params)
+    client_id = base64.b64encode(f"{connection_name}\0c\0json".encode()).decode()
+    return f"{settings.GUAC_URL}/#/client/{client_id}?token={auth_token}"

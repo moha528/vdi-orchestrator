@@ -3,6 +3,7 @@ import logging
 from typing import Optional
 
 from fastapi import APIRouter, Body, Request, HTTPException
+from fastapi.responses import RedirectResponse
 
 from ..database import db_cursor
 from ..models import TemplateIn, CloneRequest, DestroyRequest
@@ -188,6 +189,44 @@ async def api_clone_status(vmid: int, request: Request):
     if clone.get("guac_connection_id"):
         clone["guac_url"] = guacamole.guac_client_url(clone["guac_connection_id"])
     return clone
+
+
+@router.get("/connect/{vmid}")
+async def api_connect(vmid: int, request: Request):
+    """Génère un token auth-json et redirige vers Guacamole avec SSO."""
+    user = require_user(request)
+    clone = clone_manager.fetch_clone_by_vmid(vmid)
+    if not clone:
+        raise HTTPException(404, "Clone introuvable")
+    if not user.get("is_admin") and clone["username"] != user["username"]:
+        raise HTTPException(403, "Accès refusé")
+    if clone["status"] != "ready" or not clone.get("guac_connection_id"):
+        raise HTTPException(409, "Clone pas encore prêt")
+
+    from ..config import settings
+    if not settings.GUAC_JSON_SECRET:
+        return RedirectResponse(guacamole.guac_client_url(clone["guac_connection_id"]))
+
+    template = clone_manager.fetch_template(clone["template_id"])
+    params = {
+        "hostname": clone["ip_address"],
+        "port": str(template["port"]),
+        "ignore-cert": "true",
+        "security": "any",
+        "resize-method": "display-update",
+    }
+    if template.get("default_username"):
+        params["username"] = template["default_username"]
+    if template.get("default_password"):
+        params["password"] = template["default_password"]
+
+    url = guacamole.guac_sso_url(
+        username=user["username"],
+        connection_name=clone["clone_name"],
+        protocol=template["protocol"],
+        params=params,
+    )
+    return RedirectResponse(url)
 
 
 @router.post("/clone/{vmid}/destroy")

@@ -36,6 +36,9 @@ services:
       POSTGRESQL_DATABASE: guacamole_db
       POSTGRESQL_USER: guacamole_user
       POSTGRESQL_PASSWORD: GuacDB_S3cur3_2025
+    volumes:
+      - ./guac-extensions/guacamole-auth-json-1.6.0.jar:/etc/guacamole/extensions/guacamole-auth-json-1.6.0.jar:ro
+      - ./guac-config/guacamole.properties:/etc/guacamole/guacamole.properties:ro
     depends_on:
       guac-db:
         condition: service_healthy
@@ -63,6 +66,7 @@ services:
       GUAC_DB_USER: guacamole_user
       GUAC_DB_PASSWORD: GuacDB_S3cur3_2025
       GUAC_URL: http://192.168.80.10:8080/guacamole
+      GUAC_JSON_SECRET: ${GUAC_JSON_SECRET}
       # ── Clone Pool ──
       CLONE_POOL_START_ID: 500
       CLONE_POOL_END_ID: 550

@@ -29,7 +29,7 @@
       <div class="progress-steps" id="progress-{{ c.vmid }}"></div>
       <div class="flex mt-4">
         {% if c.status == 'ready' and c.guac_url %}
-        <a href="{{ c.guac_url }}" target="_blank" class="btn btn-success">Connecter</a>
+        <a href="/api/connect/{{ c.vmid }}" target="_blank" class="btn btn-success">Connecter</a>
         {% endif %}
         <button class="btn btn-danger" onclick="destroyClone({{ c.vmid }})">Détruire</button>
       </div>
@@ -67,7 +67,7 @@
         <td>
           <div class="flex">
           {% if c.status == 'ready' and c.guac_url %}
-          <a href="{{ c.guac_url }}" target="_blank" class="btn btn-success" style="padding:6px 12px">Connecter</a>
+          <a href="/api/connect/{{ c.vmid }}" target="_blank" class="btn btn-success" style="padding:6px 12px">Connecter</a>
           {% endif %}
           <button class="btn btn-danger" style="padding:6px 12px" onclick="destroyClone({{ c.vmid }})">Détruire</button>
           </div>
@@ -106,7 +106,7 @@ async function launchClone(templateId, btn){
       return;
     }
     const clone = await resp.json();
-    if(clone.status === 'ready' && clone.guac_url){
+    if(clone.status === 'ready'){
       window.location.reload();
     } else {
       pollStatus(clone.vmid);

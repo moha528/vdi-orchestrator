@@ -32,6 +32,8 @@ class Settings:
     SECRET_KEY = os.getenv("SECRET_KEY", secrets.token_hex(32))
     EXTRA_ADMINS = [u.strip() for u in os.getenv("EXTRA_ADMINS", "").split(",") if u.strip()]
 
+    GUAC_JSON_SECRET = os.getenv("GUAC_JSON_SECRET", "")
+
     BACKUP_ENABLED = os.getenv("BACKUP_ENABLED", "true").lower() in ("true", "1", "yes")
     BACKUP_DIR = os.getenv("BACKUP_DIR", "/srv/backups")
     BACKUP_MAX_SIZE_MB = int(os.getenv("BACKUP_MAX_SIZE_MB", "500"))
