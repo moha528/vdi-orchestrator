@@ -47,10 +47,16 @@ async def _monitor_tick():
             continue
 
         try:
-            state = guacamole.session_state(conn_id)
+            state = guacamole.session_state(
+                conn_id,
+                username=clone.get("username"),
+                clone_created_at=clone.get("created_at"),
+            )
         except Exception as e:
             log.warning(f"session_state({conn_id}) failed: {e}")
             continue
+
+        log.debug(f"Clone {vmid} (user={clone.get('username')}): session_state={state}")
 
         if state["active"]:
             with db_cursor() as (conn, cur):

@@ -201,11 +201,41 @@ def delete_connection(connection_id: int):
         conn.close()
 
 
-def session_state(connection_id: int) -> dict:
-    """Retourne {has_history, active, last_end}."""
+def _dump_history_for_debug(connection_id: int, username: str = None):
+    """Log les entrées d'historique pour debug (appelé seulement en DEBUG)."""
+    if not log.isEnabledFor(logging.DEBUG):
+        return
     conn = get_db()
     try:
         cur = conn.cursor()
+        cur.execute("""
+            SELECT history_id, connection_id, username, start_date, end_date
+            FROM guacamole_connection_history
+            WHERE connection_id = %s OR username = %s
+            ORDER BY start_date DESC LIMIT 5
+        """, (connection_id, username))
+        rows = cur.fetchall()
+        for r in rows:
+            log.debug(f"  history: id={r[0]} conn_id={r[1]} user={r[2]} start={r[3]} end={r[4]}")
+        if not rows:
+            log.debug(f"  Aucun historique pour conn_id={connection_id} ou user={username}")
+    finally:
+        conn.close()
+
+
+def session_state(connection_id: int, username: str = None,
+                   clone_created_at=None) -> dict:
+    """Retourne {has_history, active, last_end}.
+
+    Vérifie d'abord par connection_id (connexions DB classiques).
+    Si aucun historique trouvé et qu'un username est fourni, vérifie aussi
+    les sessions de l'utilisateur démarrées après la création du clone
+    (couvre les connexions éphémères auth-json).
+    """
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        # 1. Check par connection_id (connexion DB)
         cur.execute("""
             SELECT
                 COUNT(*) AS total,
@@ -215,10 +245,38 @@ def session_state(connection_id: int) -> dict:
             WHERE connection_id = %s
         """, (connection_id,))
         total, active, last_end = cur.fetchone()
+
+        if total > 0:
+            return {
+                "has_history": True,
+                "active": active > 0,
+                "last_end": last_end,
+            }
+
+        # 2. Fallback : check par username (connexions auth-json éphémères)
+        if username:
+            since = clone_created_at or "1970-01-01"
+            cur.execute("""
+                SELECT
+                    COUNT(*) AS total,
+                    COUNT(*) FILTER (WHERE end_date IS NULL) AS active,
+                    MAX(end_date) AS last_end
+                FROM guacamole_connection_history
+                WHERE username = %s AND start_date >= %s
+            """, (username, since))
+            total2, active2, last_end2 = cur.fetchone()
+            if total2 > 0:
+                return {
+                    "has_history": True,
+                    "active": active2 > 0,
+                    "last_end": last_end2,
+                }
+
+        _dump_history_for_debug(connection_id, username)
         return {
-            "has_history": total > 0,
-            "active": active > 0,
-            "last_end": last_end,
+            "has_history": False,
+            "active": False,
+            "last_end": None,
         }
     finally:
         conn.close()
