@@ -23,7 +23,7 @@ services:
       retries: 10
 
   guacamole:
-    image: moha528/vdi-guacamole:1.6.0
+    image: mtseckdev/vdi-guacamole:1.6.0
     build:
       context: .
       dockerfile: guacamole.Dockerfile
@@ -53,7 +53,7 @@ services:
         condition: service_started
 
   vdi-orchestrator:
-    image: moha528/vdi-orchestrator:latest
+    image: mtseckdev/vdi-orchestrator:latest
     build: ./app
     container_name: vdi-orchestrator
     restart: unless-stopped
