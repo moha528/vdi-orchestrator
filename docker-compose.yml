@@ -11,7 +11,7 @@ services:
     environment:
       POSTGRES_DB: guacamole_db
       POSTGRES_USER: guacamole_user
-      POSTGRES_PASSWORD: GuacDB_S3cur3_2025
+      POSTGRES_PASSWORD: ${GUAC_DB_PASSWORD}
       PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
       - guac-db-data:/var/lib/postgresql/data
@@ -23,7 +23,10 @@ services:
       retries: 10
 
   guacamole:
-    image: guacamole/guacamole:1.6.0
+    image: moha528/vdi-guacamole:1.6.0
+    build:
+      context: .
+      dockerfile: guacamole.Dockerfile
     container_name: guacamole
     restart: unless-stopped
     ports:
@@ -35,47 +38,54 @@ services:
       POSTGRESQL_PORT: 5432
       POSTGRESQL_DATABASE: guacamole_db
       POSTGRESQL_USER: guacamole_user
-      POSTGRESQL_PASSWORD: GuacDB_S3cur3_2025
-    volumes:
-      - ./guac-extensions/guacamole-auth-json-1.6.0.jar:/etc/guacamole/extensions/guacamole-auth-json-1.6.0.jar:ro
-      - ./guac-config/guacamole.properties:/etc/guacamole/guacamole.properties:ro
+      POSTGRESQL_PASSWORD: ${GUAC_DB_PASSWORD}
+      GUAC_JSON_SECRET: ${GUAC_JSON_SECRET}
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        echo "json-secret-key: $$GUAC_JSON_SECRET" > /etc/guacamole/guacamole.properties
+        exec /opt/guacamole/bin/start.sh
     depends_on:
       guac-db:
         condition: service_healthy
       guacd:
         condition: service_started
 
-  # ─── VDI Orchestrator (NOUVEAU) ───────────────────
   vdi-orchestrator:
+    image: moha528/vdi-orchestrator:latest
     build: ./app
     container_name: vdi-orchestrator
     restart: unless-stopped
     ports:
       - "8000:8000"
     environment:
-      # ── Proxmox ──
-      PROXMOX_HOST: 192.168.80.10
-      PROXMOX_PORT: 8006
-      PROXMOX_USER: root@pam
+      PROXMOX_HOST: ${PROXMOX_HOST}
+      PROXMOX_PORT: ${PROXMOX_PORT:-8006}
+      PROXMOX_USER: ${PROXMOX_USER:-root@pam}
       PROXMOX_PASSWORD: ${PROXMOX_PASSWORD}
-      PROXMOX_NODE: proxmox
-      # ── Guacamole DB ──
+      PROXMOX_NODE: ${PROXMOX_NODE:-proxmox}
       GUAC_DB_HOST: guac-db
       GUAC_DB_PORT: 5432
       GUAC_DB_NAME: guacamole_db
       GUAC_DB_USER: guacamole_user
-      GUAC_DB_PASSWORD: GuacDB_S3cur3_2025
-      GUAC_URL: http://192.168.80.10:8080/guacamole
+      GUAC_DB_PASSWORD: ${GUAC_DB_PASSWORD}
+      GUAC_URL: ${GUAC_URL}
       GUAC_JSON_SECRET: ${GUAC_JSON_SECRET}
-      # ── Clone Pool ──
-      CLONE_POOL_START_ID: 500
-      CLONE_POOL_END_ID: 550
-      CLONE_NAME_PREFIX: "vdi-"
-      POLL_INTERVAL: 3
-      POLL_TIMEOUT: 120
-      BACKUP_ENABLED: "true"
-      BACKUP_MAX_SIZE_MB: 500
-      BACKUP_VM_USER: etudiant
+      SECRET_KEY: ${SECRET_KEY:-}
+      EXTRA_ADMINS: ${EXTRA_ADMINS:-}
+      CLONE_POOL_START_ID: ${CLONE_POOL_START_ID:-500}
+      CLONE_POOL_END_ID: ${CLONE_POOL_END_ID:-550}
+      CLONE_NAME_PREFIX: ${CLONE_NAME_PREFIX:-vdi-}
+      POLL_INTERVAL: ${POLL_INTERVAL:-3}
+      POLL_TIMEOUT: ${POLL_TIMEOUT:-120}
+      MONITOR_INTERVAL: ${MONITOR_INTERVAL:-15}
+      UNUSED_TIMEOUT: ${UNUSED_TIMEOUT:-300}
+      MAX_CLONE_LIFETIME: ${MAX_CLONE_LIFETIME:-14400}
+      ORPHAN_SCAN_INTERVAL: ${ORPHAN_SCAN_INTERVAL:-120}
+      BACKUP_ENABLED: ${BACKUP_ENABLED:-true}
+      BACKUP_MAX_SIZE_MB: ${BACKUP_MAX_SIZE_MB:-500}
+      BACKUP_VM_USER: ${BACKUP_VM_USER:-etudiant}
     volumes:
       - vdi-backups:/srv/backups
     depends_on:
