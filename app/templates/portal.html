@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+{% block title %}Mes desktops — VDI Orchestrator{% endblock %}
+{% block content %}
+<h1>Desktops disponibles</h1>
+<p class="subtitle">Cliquez sur "Lancer" pour provisionner un desktop virtuel à la demande.</p>
+
+{% if templates_list %}
+<div class="grid">
+  {% for tpl in templates_list %}
+  <div class="card" data-template-id="{{ tpl.id }}">
+    <div class="flex-between mb-4">
+      <h2 style="margin:0">{{ tpl.display_name }}</h2>
+      <span class="text-mute">{{ tpl.protocol|upper }}</span>
+    </div>
+    <div class="text-dim mb-4">
+      <span class="text-mute">Ressources</span> · {{ tpl.cores }} vCPU · {{ tpl.memory }} Mo
+    </div>
+    <div class="text-mute mb-4">{{ tpl.current_clones }}/{{ tpl.max_clones }} clones actifs</div>
+
+    {% if tpl.my_clone %}
+      {% set c = tpl.my_clone %}
+      <div class="mt-4">
+        <span class="badge-status
+          {% if c.status == 'ready' %}badge-ready
+          {% elif c.status == 'error' %}badge-error
+          {% elif c.status == 'destroying' %}badge-destroying
+          {% else %}badge-creating{% endif %}">{{ c.status }}</span>
+      </div>
+      <div class="progress-steps" id="progress-{{ c.vmid }}"></div>
+      <div class="flex mt-4">
+        {% if c.status == 'ready' and c.guac_url %}
+        <a href="{{ c.guac_url }}" target="_blank" class="btn btn-success">Connecter</a>
+        {% endif %}
+        <button class="btn btn-danger" onclick="destroyClone({{ c.vmid }})">Détruire</button>
+      </div>
+    {% elif tpl.current_clones >= tpl.max_clones %}
+      <button class="btn btn-ghost" disabled>Capacité maximale atteinte</button>
+    {% else %}
+      <button class="btn btn-primary" onclick="launchClone({{ tpl.id }}, this)">Lancer</button>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card empty">
+  Aucun desktop disponible. Contactez votre administrateur pour obtenir l'accès.
+</div>
+{% endif %}
+
+{% if my_clones %}
+<h2 class="mt-8">Mes sessions actives</h2>
+<div class="card" style="padding:0;overflow:hidden">
+  <table>
+    <thead>
+      <tr><th>VMID</th><th>Desktop</th><th>IP</th><th>Statut</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+      {% for c in my_clones %}
+      <tr>
+        <td>{{ c.vmid }}</td>
+        <td>{{ c.template_name or '—' }}</td>
+        <td class="text-dim">{{ c.ip_address or '—' }}</td>
+        <td><span class="badge-status
+          {% if c.status == 'ready' %}badge-ready
+          {% elif c.status == 'error' %}badge-error
+          {% else %}badge-creating{% endif %}">{{ c.status }}</span></td>
+        <td>
+          <div class="flex">
+          {% if c.status == 'ready' and c.guac_url %}
+          <a href="{{ c.guac_url }}" target="_blank" class="btn btn-success" style="padding:6px 12px">Connecter</a>
+          {% endif %}
+          <button class="btn btn-danger" style="padding:6px 12px" onclick="destroyClone({{ c.vmid }})">Détruire</button>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<script>
+const STEPS = ['creating','waiting_clone','starting','waiting_ip','restoring_backup','creating_connection','ready'];
+
+function renderProgress(vmid, status){
+  const el = document.getElementById('progress-' + vmid);
+  if(!el) return;
+  const idx = STEPS.indexOf(status);
+  el.innerHTML = STEPS.slice(0,-1).map((s,i) => {
+    const cls = i < idx ? 'done' : (i === idx ? 'active' : '');
+    return '<div class="step ' + cls + '"></div>';
+  }).join('');
+}
+
+async function launchClone(templateId, btn){
+  btn.disabled = true; btn.textContent = 'Provisioning...';
+  try{
+    const resp = await fetch('/api/clone/request',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({template_id: templateId})
+    });
+    if(!resp.ok){
+      const err = await resp.json().catch(()=>({detail:'Erreur inconnue'}));
+      alert('Erreur : ' + (err.detail || resp.status));
+      btn.disabled = false; btn.textContent = 'Lancer';
+      return;
+    }
+    const clone = await resp.json();
+    if(clone.status === 'ready' && clone.guac_url){
+      window.location.reload();
+    } else {
+      pollStatus(clone.vmid);
+    }
+  }catch(e){
+    alert('Erreur réseau : ' + e.message);
+    btn.disabled = false; btn.textContent = 'Lancer';
+  }
+}
+
+async function pollStatus(vmid){
+  for(let i=0;i<120;i++){
+    await new Promise(r => setTimeout(r, 2000));
+    try{
+      const resp = await fetch('/api/clone/' + vmid + '/status');
+      if(!resp.ok) continue;
+      const c = await resp.json();
+      renderProgress(vmid, c.status);
+      if(c.status === 'ready'){ window.location.reload(); return; }
+      if(c.status === 'error'){ alert('Erreur de provisioning'); window.location.reload(); return; }
+    }catch(e){}
+  }
+}
+
+async function destroyClone(vmid){
+  const choice = confirm(
+    'Détruire le clone ' + vmid + ' ?\n\n' +
+    'OK = Détruire avec sauvegarde du home\n' +
+    'Pour détruire SANS sauvegarde, maintenez Shift et cliquez sur Détruire.'
+  );
+  if(!choice) return;
+  const doBackup = !event.shiftKey;
+  try{
+    const resp = await fetch('/api/clone/' + vmid + '/destroy',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({backup: doBackup})
+    });
+    if(!resp.ok){
+      const err = await resp.json().catch(()=>({}));
+      alert('Erreur : ' + (err.detail || resp.status));
+      return;
+    }
+    window.location.reload();
+  }catch(e){ alert('Erreur réseau'); }
+}
+
+// Reprise du polling pour les clones en cours
+document.querySelectorAll('[data-template-id]').forEach(card => {
+  const clone = card.querySelector('.badge-status');
+  if(clone && !clone.classList.contains('badge-ready') && !clone.classList.contains('badge-error')){
+    const vmidBtn = card.querySelector('[onclick^="destroyClone"]');
+    if(vmidBtn){
+      const m = vmidBtn.getAttribute('onclick').match(/(\d+)/);
+      if(m) pollStatus(parseInt(m[1]));
+    }
+  }
+});
+</script>
+{% endblock %}

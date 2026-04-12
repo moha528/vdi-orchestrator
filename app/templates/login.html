@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Connexion — VDI Orchestrator{% endblock %}
+{% block content %}
+<div style="max-width:400px;margin:60px auto">
+  <div class="card" style="padding:32px">
+    <div style="text-align:center;margin-bottom:28px">
+      <div style="font-size:24px;font-weight:700;letter-spacing:.5px">VDI <span style="color:var(--accent)">Orchestrator</span></div>
+      <div class="text-mute mt-4">Connectez-vous avec vos identifiants Guacamole</div>
+    </div>
+    {% if error %}
+    <div class="card" style="background:rgba(239,68,68,.08);border-color:rgba(239,68,68,.3);color:var(--danger);margin-bottom:18px;padding:12px 14px;font-size:13px">
+      {{ error }}
+    </div>
+    {% endif %}
+    <form method="post" action="/login">
+      <div class="form-row">
+        <label>Identifiant</label>
+        <input type="text" name="username" autofocus required>
+      </div>
+      <div class="form-row">
+        <label>Mot de passe</label>
+        <input type="password" name="password" required>
+      </div>
+      <button type="submit" class="btn btn-primary" style="width:100%;padding:11px;margin-top:6px">Se connecter</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

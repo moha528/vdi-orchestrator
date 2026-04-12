@@ -1,0 +1,288 @@
+{% extends "base.html" %}
+{% block title %}Administration — VDI Orchestrator{% endblock %}
+{% block content %}
+<h1>Administration</h1>
+<p class="subtitle">Gestion des templates, clones et historique des sessions VDI.</p>
+
+<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr));margin-bottom:28px">
+  <div class="stat">
+    <div class="label">Clones actifs</div>
+    <div class="value">{{ active_clones|length }}</div>
+  </div>
+  <div class="stat">
+    <div class="label">Templates actifs</div>
+    <div class="value">{{ vdi_templates|selectattr('enabled')|list|length }}</div>
+  </div>
+  <div class="stat">
+    <div class="label">Sessions totales</div>
+    <div class="value">{{ stats.total_sessions }}</div>
+  </div>
+  <div class="stat">
+    <div class="label">Durée moyenne</div>
+    <div class="value">{{ (stats.avg_duration_seconds // 60) }}m</div>
+  </div>
+</div>
+
+<div class="tabs">
+  <div class="tab active" data-tab="templates">Templates</div>
+  <div class="tab" data-tab="clones">Clones actifs</div>
+  <div class="tab" data-tab="history">Historique</div>
+  <div class="tab" data-tab="users">Utilisateurs</div>
+</div>
+
+<div class="tab-panel" id="panel-templates">
+  <div class="flex-between mb-4">
+    <h2 style="margin:0">Templates VDI</h2>
+    <div class="flex">
+      <button class="btn btn-ghost" onclick="scanProxmox()">Scanner Proxmox</button>
+      <button class="btn btn-primary" onclick="openTemplateModal()">Ajouter un template</button>
+    </div>
+  </div>
+  <div class="card" style="padding:0;overflow:hidden">
+    <table>
+      <thead>
+        <tr><th>Nom</th><th>VMID</th><th>Protocole</th><th>Ressources</th><th>Max</th><th>Groupes</th><th>État</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for t in vdi_templates %}
+        <tr>
+          <td><strong>{{ t.display_name }}</strong><div class="text-mute">{{ t.group_name }}</div></td>
+          <td>{{ t.template_vmid }}</td>
+          <td>{{ t.protocol|upper }} :{{ t.port }}</td>
+          <td>{{ t.cores }}v / {{ t.memory }}Mo</td>
+          <td>{{ t.max_clones }}</td>
+          <td class="text-dim">{{ (t.groups|join(', ')) or '—' }}</td>
+          <td>
+            {% if t.enabled %}<span class="badge-status badge-ready">Actif</span>
+            {% else %}<span class="badge-status badge-destroying">Désactivé</span>{% endif %}
+          </td>
+          <td>
+            <div class="flex">
+            <button class="btn btn-ghost" style="padding:5px 10px" onclick='editTemplate({{ t.id }}, {{ t|tojson }})'>Modifier</button>
+            <button class="btn btn-danger" style="padding:5px 10px" onclick="deleteTemplate({{ t.id }})">Supprimer</button>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="tab-panel" id="panel-clones" style="display:none">
+  <div class="flex-between mb-4">
+    <h2 style="margin:0">Clones actifs</h2>
+    <button class="btn btn-danger" onclick="destroyAll()">Détruire tous les clones</button>
+  </div>
+  <div class="card" style="padding:0;overflow:hidden">
+    <table>
+      <thead>
+        <tr><th>VMID</th><th>Utilisateur</th><th>Template</th><th>IP</th><th>Statut</th><th>Créé</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for c in active_clones %}
+        <tr>
+          <td>{{ c.vmid }}</td>
+          <td>{{ c.username }}</td>
+          <td>{{ c.template_name or '—' }}</td>
+          <td class="text-dim">{{ c.ip_address or '—' }}</td>
+          <td>
+            <span class="badge-status
+              {% if c.status == 'ready' %}badge-ready
+              {% elif c.status == 'error' %}badge-error
+              {% else %}badge-creating{% endif %}">{{ c.status }}</span>
+          </td>
+          <td class="text-mute">{{ c.created_at }}</td>
+          <td><button class="btn btn-danger" style="padding:5px 10px" onclick="destroyClone({{ c.vmid }})">Détruire</button></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" class="empty">Aucun clone actif</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="tab-panel" id="panel-history" style="display:none">
+  <h2>Historique des sessions</h2>
+  <div class="card" style="padding:0;overflow:hidden">
+    <table>
+      <thead>
+        <tr><th>VMID</th><th>Utilisateur</th><th>Template</th><th>Créé</th><th>Détruit</th><th>Durée</th><th>Raison</th></tr>
+      </thead>
+      <tbody>
+        {% for s in history %}
+        <tr>
+          <td>{{ s.vmid }}</td>
+          <td>{{ s.username }}</td>
+          <td>{{ s.template_name or '—' }}</td>
+          <td class="text-mute">{{ s.created_at }}</td>
+          <td class="text-mute">{{ s.destroyed_at or '—' }}</td>
+          <td>{{ ((s.duration_seconds or 0) // 60) }}m</td>
+          <td class="text-dim">{{ s.destroy_reason or '—' }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" class="empty">Aucune session enregistrée</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="tab-panel" id="panel-users" style="display:none">
+  <h2>Utilisateurs Guacamole</h2>
+  <div class="card" style="padding:0;overflow:hidden">
+    <table>
+      <thead><tr><th>Utilisateur</th><th>Groupes</th><th>État</th></tr></thead>
+      <tbody>
+        {% for u in guac_users %}
+        <tr>
+          <td><strong>{{ u.username }}</strong></td>
+          <td class="text-dim">{{ u.groups|join(', ') or '—' }}</td>
+          <td>{% if u.disabled %}<span class="badge-status badge-error">Désactivé</span>{% else %}<span class="badge-status badge-ready">Actif</span>{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Modal Template -->
+<div class="modal-overlay" id="template-modal">
+  <div class="modal">
+    <h3 id="modal-title">Nouveau template</h3>
+    <form id="template-form">
+      <input type="hidden" name="id" value="">
+      <div class="form-grid">
+        <div class="form-row"><label>VMID Proxmox</label><input type="number" name="template_vmid" required></div>
+        <div class="form-row"><label>Identifiant groupe</label><input type="text" name="group_name" required></div>
+      </div>
+      <div class="form-row"><label>Nom affiché</label><input type="text" name="display_name" required></div>
+      <div class="form-grid">
+        <div class="form-row"><label>Protocole</label>
+          <select name="protocol"><option value="rdp">RDP</option><option value="vnc">VNC</option><option value="ssh">SSH</option></select>
+        </div>
+        <div class="form-row"><label>Port</label><input type="number" name="port" value="3389" required></div>
+      </div>
+      <div class="form-grid">
+        <div class="form-row"><label>Utilisateur par défaut</label><input type="text" name="default_username"></div>
+        <div class="form-row"><label>Mot de passe par défaut</label><input type="password" name="default_password"></div>
+      </div>
+      <div class="form-grid">
+        <div class="form-row"><label>Cores</label><input type="number" name="cores" value="2" required></div>
+        <div class="form-row"><label>RAM (Mo)</label><input type="number" name="memory" value="2048" required></div>
+      </div>
+      <div class="form-grid">
+        <div class="form-row"><label>Max clones</label><input type="number" name="max_clones" value="5" required></div>
+        <div class="form-row"><label>Activé</label><select name="enabled"><option value="true">Oui</option><option value="false">Non</option></select></div>
+      </div>
+      <div class="form-row">
+        <label>Groupes Guacamole autorisés</label>
+        <select name="guacamole_groups" multiple size="5">
+          {% for g in guac_groups %}<option value="{{ g }}">{{ g }}</option>{% endfor %}
+        </select>
+        <div class="text-mute mt-4">Laisser vide pour rendre le template visible par tous</div>
+      </div>
+      <div class="flex mt-6" style="justify-content:flex-end">
+        <button type="button" class="btn btn-ghost" onclick="closeTemplateModal()">Annuler</button>
+        <button type="submit" class="btn btn-primary">Enregistrer</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+// Tabs
+document.querySelectorAll('.tab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    document.querySelectorAll('.tab-panel').forEach(p => p.style.display = 'none');
+    document.getElementById('panel-' + t.dataset.tab).style.display = 'block';
+  });
+});
+
+// Template modal
+const modal = document.getElementById('template-modal');
+const form = document.getElementById('template-form');
+
+function openTemplateModal(){
+  form.reset();
+  form.elements['id'].value = '';
+  document.getElementById('modal-title').textContent = 'Nouveau template';
+  modal.classList.add('open');
+}
+function closeTemplateModal(){ modal.classList.remove('open'); }
+
+function editTemplate(id, data){
+  form.reset();
+  form.elements['id'].value = id;
+  document.getElementById('modal-title').textContent = 'Modifier ' + data.display_name;
+  for(const k of ['template_vmid','group_name','display_name','protocol','port','default_username','default_password','cores','memory','max_clones']){
+    if(form.elements[k]) form.elements[k].value = data[k] ?? '';
+  }
+  form.elements['enabled'].value = data.enabled ? 'true' : 'false';
+  const sel = form.elements['guacamole_groups'];
+  [...sel.options].forEach(o => o.selected = (data.groups || []).includes(o.value));
+  modal.classList.add('open');
+}
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(form);
+  const payload = {
+    template_vmid: parseInt(fd.get('template_vmid')),
+    group_name: fd.get('group_name'),
+    display_name: fd.get('display_name'),
+    protocol: fd.get('protocol'),
+    port: parseInt(fd.get('port')),
+    default_username: fd.get('default_username') || null,
+    default_password: fd.get('default_password') || null,
+    cores: parseInt(fd.get('cores')),
+    memory: parseInt(fd.get('memory')),
+    max_clones: parseInt(fd.get('max_clones')),
+    enabled: fd.get('enabled') === 'true',
+    guacamole_groups: [...form.elements['guacamole_groups'].selectedOptions].map(o => o.value),
+  };
+  const id = fd.get('id');
+  const url = id ? ('/api/templates/' + id) : '/api/templates';
+  const method = id ? 'PUT' : 'POST';
+  const resp = await fetch(url, {method, headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+  if(!resp.ok){
+    const err = await resp.json().catch(()=>({}));
+    alert('Erreur : ' + (err.detail || resp.status));
+    return;
+  }
+  window.location.reload();
+});
+
+async function deleteTemplate(id){
+  if(!confirm('Supprimer ce template ?')) return;
+  await fetch('/api/templates/' + id, {method:'DELETE'});
+  window.location.reload();
+}
+
+async function destroyClone(vmid){
+  if(!confirm('Détruire le clone ' + vmid + ' ?')) return;
+  await fetch('/api/clone/' + vmid + '/destroy', {method:'POST'});
+  window.location.reload();
+}
+
+async function destroyAll(){
+  if(!confirm('Détruire TOUS les clones actifs ?')) return;
+  await fetch('/api/clones/destroy-all', {method:'POST'});
+  window.location.reload();
+}
+
+async function scanProxmox(){
+  try{
+    const resp = await fetch('/api/proxmox/templates');
+    if(!resp.ok){ alert('Échec du scan Proxmox'); return; }
+    const tpls = await resp.json();
+    if(!tpls.length){ alert('Aucun template détecté dans Proxmox'); return; }
+    const list = tpls.map(t => '  - VMID ' + t.vmid + ' : ' + t.name).join('\n');
+    alert('Templates détectés :\n' + list + '\n\nUtilisez "Ajouter un template" pour les configurer.');
+  }catch(e){ alert('Erreur : ' + e.message); }
+}
+</script>
+{% endblock %}
