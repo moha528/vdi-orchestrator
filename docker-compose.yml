@@ -45,7 +45,7 @@ services:
       - -c
       - |
         echo "json-secret-key: $$GUAC_JSON_SECRET" > /etc/guacamole/guacamole.properties
-        exec /opt/guacamole/bin/start.sh
+        exec catalina.sh run
     depends_on:
       guac-db:
         condition: service_healthy
