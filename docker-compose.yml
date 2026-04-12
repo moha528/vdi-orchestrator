@@ -1,6 +1,6 @@
 services:
   guacd:
-    image: guacamole/guacd:latest
+    image: guacamole/guacd:1.6.0
     container_name: guacd
     restart: unless-stopped
 
@@ -23,7 +23,7 @@ services:
       retries: 10
 
   guacamole:
-    image: guacamole/guacamole:latest
+    image: guacamole/guacamole:1.6.0
     container_name: guacamole
     restart: unless-stopped
     ports:
