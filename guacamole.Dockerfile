@@ -7,6 +7,9 @@ RUN mkdir -p /etc/guacamole/extensions && \
     tar -xzf /tmp/auth-json.tar.gz -C /tmp && \
     cp /tmp/guacamole-auth-json-1.6.0/guacamole-auth-json-1.6.0.jar /etc/guacamole/extensions/ && \
     rm -rf /tmp/auth-json.tar.gz /tmp/guacamole-auth-json-1.6.0 && \
-    chown -R guacamole:guacamole /etc/guacamole && \
-    chown -R guacamole:guacamole /usr/local/tomcat
-USER guacamole
+    chown -R guacamole:guacamole /etc/guacamole
+
+# Script wrapper : injecte json-secret-key puis lance l'entrypoint original
+COPY --chmod=755 guac-entrypoint.sh /guac-entrypoint.sh
+
+ENTRYPOINT ["/guac-entrypoint.sh"]
