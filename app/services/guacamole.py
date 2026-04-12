@@ -1,6 +1,7 @@
 """Accès direct à la DB Guacamole : auth, users, groupes, connexions, historique."""
 import base64
 import hashlib
+import hmac
 import json
 import logging
 import time
@@ -232,12 +233,15 @@ def guac_client_url(connection_id: int) -> str:
 # ── guacamole-auth-json (SSO) ──────────────────────────
 
 def _encrypt_auth_json(payload: dict) -> str:
-    """Chiffre un payload JSON en AES-128-CBC (IV nul) pour guacamole-auth-json."""
+    """Signe (HMAC-SHA256) puis chiffre (AES-128-CBC) pour guacamole-auth-json."""
     key = bytes.fromhex(settings.GUAC_JSON_SECRET)
     json_bytes = json.dumps(payload).encode("utf-8")
+    # 1. HMAC-SHA256 du JSON
+    signature = hmac.new(key, json_bytes, hashlib.sha256).digest()
+    # 2. Concaténer signature (32 bytes) + JSON, puis chiffrer
     iv = b'\x00' * 16
     cipher = AES.new(key, AES.MODE_CBC, iv)
-    encrypted = cipher.encrypt(pad(json_bytes, AES.block_size))
+    encrypted = cipher.encrypt(pad(signature + json_bytes, AES.block_size))
     return base64.b64encode(encrypted).decode()
 
 

@@ -220,12 +220,16 @@ async def api_connect(vmid: int, request: Request):
     if template.get("default_password"):
         params["password"] = template["default_password"]
 
-    url = guacamole.guac_sso_url(
-        username=user["username"],
-        connection_name=clone["clone_name"],
-        protocol=template["protocol"],
-        params=params,
-    )
+    try:
+        url = guacamole.guac_sso_url(
+            username=user["username"],
+            connection_name=clone["clone_name"],
+            protocol=template["protocol"],
+            params=params,
+        )
+    except Exception as e:
+        log.error(f"SSO token generation failed: {e}")
+        url = guacamole.guac_client_url(clone["guac_connection_id"])
     return RedirectResponse(url)
 
 
