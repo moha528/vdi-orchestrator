@@ -106,7 +106,24 @@ def _insert_session_log(clone: dict, reason: str):
         ))
 
 
-async def request_clone(username: str, template_id: int) -> dict:
+def _clamp_resources(template: dict, cores: Optional[int], memory: Optional[int]) -> tuple[int, int]:
+    """Clamp les ressources demandées dans la plage admin du template."""
+    c_min = template.get("cores_min") or 1
+    c_max = template.get("cores_max") or template["cores"]
+    m_min = template.get("memory_min") or 128
+    m_max = template.get("memory_max") or template["memory"]
+
+    c = cores if cores is not None else template["cores"]
+    m = memory if memory is not None else template["memory"]
+
+    c = max(c_min, min(c_max, int(c)))
+    m = max(m_min, min(m_max, int(m)))
+    return c, m
+
+
+async def request_clone(username: str, template_id: int,
+                        cores: Optional[int] = None,
+                        memory: Optional[int] = None) -> dict:
     template = fetch_template(template_id)
     if not template or not template["enabled"]:
         raise HTTPException(404, "Template introuvable ou désactivé")
@@ -123,6 +140,8 @@ async def request_clone(username: str, template_id: int) -> dict:
         if current >= template["max_clones"]:
             raise HTTPException(409, f"Nombre maximum de clones atteint ({template['max_clones']})")
 
+        chosen_cores, chosen_memory = _clamp_resources(template, cores, memory)
+
         # Réservation VMID : on insère la ligne vdi_clone avec un VMID libre.
         # L'UNIQUE constraint sur vmid sert de verrou DB.
         new_vmid = None
@@ -135,9 +154,11 @@ async def request_clone(username: str, template_id: int) -> dict:
             try:
                 with db_cursor() as (conn, cur):
                     cur.execute("""
-                        INSERT INTO vdi_clone (vmid, template_id, clone_name, username, status)
-                        VALUES (%s, %s, %s, %s, 'creating')
-                    """, (candidate, template_id, clone_name, username))
+                        INSERT INTO vdi_clone
+                            (vmid, template_id, clone_name, username, status, cores, memory)
+                        VALUES (%s, %s, %s, %s, 'creating', %s, %s)
+                    """, (candidate, template_id, clone_name, username,
+                          chosen_cores, chosen_memory))
                 new_vmid = candidate
                 break
             except Exception as e:
@@ -150,10 +171,13 @@ async def request_clone(username: str, template_id: int) -> dict:
         clone_name = f"{settings.CLONE_NAME_PREFIX}{template['group_name']}-{new_vmid}"
 
         try:
-            log.info(f"Creating clone {clone_name} (vmid={new_vmid}) for {username}")
+            log.info(
+                f"Creating clone {clone_name} (vmid={new_vmid}) for {username} "
+                f"with {chosen_cores}vCPU / {chosen_memory}Mo"
+            )
             await proxmox.create_linked_clone(
                 template["template_vmid"], new_vmid, clone_name,
-                cores=template["cores"], memory=template["memory"],
+                cores=chosen_cores, memory=chosen_memory,
             )
 
             _update_clone_status(new_vmid, "waiting_clone")

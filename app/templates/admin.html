@@ -49,7 +49,7 @@
           <td><strong>{{ t.display_name }}</strong><div class="text-mute">{{ t.group_name }}</div></td>
           <td>{{ t.template_vmid }}</td>
           <td>{{ t.protocol|upper }} :{{ t.port }}</td>
-          <td>{{ t.cores }}v / {{ t.memory }}Mo</td>
+          <td>{{ t.cores }}v / {{ t.memory }}Mo<div class="text-mute">{{ t.cores_min }}-{{ t.cores_max }}v · {{ t.memory_min }}-{{ t.memory_max }}Mo</div></td>
           <td>{{ t.max_clones }}</td>
           <td class="text-dim">{{ (t.groups|join(', ')) or '—' }}</td>
           <td>
@@ -169,8 +169,16 @@
         <div class="form-row"><label>Mot de passe par défaut</label><input type="password" name="default_password"></div>
       </div>
       <div class="form-grid">
-        <div class="form-row"><label>Cores</label><input type="number" name="cores" value="2" required></div>
-        <div class="form-row"><label>RAM (Mo)</label><input type="number" name="memory" value="2048" required></div>
+        <div class="form-row"><label>Cores (défaut)</label><input type="number" name="cores" value="2" min="1" required></div>
+        <div class="form-row"><label>RAM Mo (défaut)</label><input type="number" name="memory" value="2048" min="128" required></div>
+      </div>
+      <div class="form-grid">
+        <div class="form-row"><label>Cores min</label><input type="number" name="cores_min" value="1" min="1" required></div>
+        <div class="form-row"><label>Cores max</label><input type="number" name="cores_max" value="8" min="1" required></div>
+      </div>
+      <div class="form-grid">
+        <div class="form-row"><label>RAM min (Mo)</label><input type="number" name="memory_min" value="1024" min="128" required></div>
+        <div class="form-row"><label>RAM max (Mo)</label><input type="number" name="memory_max" value="16384" min="128" required></div>
       </div>
       <div class="form-grid">
         <div class="form-row"><label>Max clones</label><input type="number" name="max_clones" value="5" required></div>
@@ -218,7 +226,7 @@ function editTemplate(id, data){
   form.reset();
   form.elements['id'].value = id;
   document.getElementById('modal-title').textContent = 'Modifier ' + data.display_name;
-  for(const k of ['template_vmid','group_name','display_name','protocol','port','default_username','default_password','cores','memory','max_clones']){
+  for(const k of ['template_vmid','group_name','display_name','protocol','port','default_username','default_password','cores','memory','cores_min','cores_max','memory_min','memory_max','max_clones']){
     if(form.elements[k]) form.elements[k].value = data[k] ?? '';
   }
   form.elements['enabled'].value = data.enabled ? 'true' : 'false';
@@ -240,6 +248,10 @@ form.addEventListener('submit', async (e) => {
     default_password: fd.get('default_password') || null,
     cores: parseInt(fd.get('cores')),
     memory: parseInt(fd.get('memory')),
+    cores_min: parseInt(fd.get('cores_min')),
+    cores_max: parseInt(fd.get('cores_max')),
+    memory_min: parseInt(fd.get('memory_min')),
+    memory_max: parseInt(fd.get('memory_max')),
     max_clones: parseInt(fd.get('max_clones')),
     enabled: fd.get('enabled') === 'true',
     guacamole_groups: [...form.elements['guacamole_groups'].selectedOptions].map(o => o.value),

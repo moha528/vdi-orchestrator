@@ -74,13 +74,17 @@ async def api_create_template(request: Request, payload: TemplateIn):
         cur.execute("""
             INSERT INTO vdi_template
                 (template_vmid, group_name, display_name, protocol, port,
-                 default_username, default_password, cores, memory, max_clones, enabled)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                 default_username, default_password, cores, memory,
+                 cores_min, cores_max, memory_min, memory_max,
+                 max_clones, enabled)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             RETURNING id
         """, (
             payload.template_vmid, payload.group_name, payload.display_name,
             payload.protocol, payload.port, payload.default_username,
             payload.default_password, payload.cores, payload.memory,
+            payload.cores_min, payload.cores_max,
+            payload.memory_min, payload.memory_max,
             payload.max_clones, payload.enabled,
         ))
         tid = cur.fetchone()[0]
@@ -101,12 +105,16 @@ async def api_update_template(template_id: int, request: Request, payload: Templ
                 template_vmid = %s, group_name = %s, display_name = %s,
                 protocol = %s, port = %s, default_username = %s,
                 default_password = %s, cores = %s, memory = %s,
+                cores_min = %s, cores_max = %s,
+                memory_min = %s, memory_max = %s,
                 max_clones = %s, enabled = %s
             WHERE id = %s
         """, (
             payload.template_vmid, payload.group_name, payload.display_name,
             payload.protocol, payload.port, payload.default_username,
             payload.default_password, payload.cores, payload.memory,
+            payload.cores_min, payload.cores_max,
+            payload.memory_min, payload.memory_max,
             payload.max_clones, payload.enabled, template_id,
         ))
         cur.execute("DELETE FROM vdi_template_group WHERE template_id = %s", (template_id,))
@@ -174,7 +182,10 @@ async def api_request_clone(request: Request, payload: CloneRequest):
         if not (set(allowed) & set(user["groups"])):
             raise HTTPException(403, "Vous n'avez pas accès à ce template")
 
-    clone = await clone_manager.request_clone(user["username"], template_id)
+    clone = await clone_manager.request_clone(
+        user["username"], template_id,
+        cores=payload.cores, memory=payload.memory,
+    )
     return clone
 
 

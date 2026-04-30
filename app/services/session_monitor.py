@@ -85,8 +85,12 @@ async def _monitor_tick():
 
         if age > settings.MAX_CLONE_LIFETIME:
             log.warning(f"Clone {vmid}: durée de vie max atteinte ({int(age)}s)")
+            # Si la session est encore active à l'instant du timeout, on ne backup pas :
+            # snapshot incohérent risquerait d'écraser un backup propre. L'auto-disconnect
+            # normal aura déjà fait un backup sain au précédent disconnect.
+            do_backup = not state["active"]
             try:
-                await clone_manager.destroy_clone(vmid, reason="timeout")
+                await clone_manager.destroy_clone(vmid, reason="timeout", do_backup=do_backup)
             except Exception as e:
                 log.error(f"Max lifetime destroy {vmid} failed: {e}")
 

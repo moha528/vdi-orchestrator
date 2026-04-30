@@ -22,10 +22,19 @@ CREATE TABLE IF NOT EXISTS vdi_template (
     default_password VARCHAR(255),
     cores INTEGER NOT NULL DEFAULT 2,
     memory INTEGER NOT NULL DEFAULT 2048,
+    cores_min INTEGER NOT NULL DEFAULT 1,
+    cores_max INTEGER NOT NULL DEFAULT 8,
+    memory_min INTEGER NOT NULL DEFAULT 1024,
+    memory_max INTEGER NOT NULL DEFAULT 16384,
     max_clones INTEGER NOT NULL DEFAULT 5,
     enabled BOOLEAN NOT NULL DEFAULT true,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+ALTER TABLE vdi_template ADD COLUMN IF NOT EXISTS cores_min INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE vdi_template ADD COLUMN IF NOT EXISTS cores_max INTEGER NOT NULL DEFAULT 8;
+ALTER TABLE vdi_template ADD COLUMN IF NOT EXISTS memory_min INTEGER NOT NULL DEFAULT 1024;
+ALTER TABLE vdi_template ADD COLUMN IF NOT EXISTS memory_max INTEGER NOT NULL DEFAULT 16384;
 
 CREATE TABLE IF NOT EXISTS vdi_template_group (
     id SERIAL PRIMARY KEY,
@@ -43,10 +52,15 @@ CREATE TABLE IF NOT EXISTS vdi_clone (
     ip_address VARCHAR(45),
     guac_connection_id INTEGER,
     status VARCHAR(50) NOT NULL DEFAULT 'creating',
+    cores INTEGER,
+    memory INTEGER,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     connected_at TIMESTAMP,
     last_activity TIMESTAMP
 );
+
+ALTER TABLE vdi_clone ADD COLUMN IF NOT EXISTS cores INTEGER;
+ALTER TABLE vdi_clone ADD COLUMN IF NOT EXISTS memory INTEGER;
 
 CREATE INDEX IF NOT EXISTS idx_vdi_clone_username ON vdi_clone(username);
 CREATE INDEX IF NOT EXISTS idx_vdi_clone_status ON vdi_clone(status);
@@ -107,7 +121,9 @@ def seed_default_template():
         if count == 0:
             cur.execute("""
                 INSERT INTO vdi_template
-                    (template_vmid, group_name, display_name, protocol, port, cores, memory, max_clones)
-                VALUES (100, 'default', 'Desktop Linux Mint', 'rdp', 3389, 2, 2048, 5)
+                    (template_vmid, group_name, display_name, protocol, port,
+                     cores, memory, cores_min, cores_max, memory_min, memory_max, max_clones)
+                VALUES (100, 'default', 'Desktop Linux Mint', 'rdp', 3389,
+                        2, 2048, 1, 8, 1024, 16384, 5)
             """)
             log.info("Seeded default template (VMID 100)")
